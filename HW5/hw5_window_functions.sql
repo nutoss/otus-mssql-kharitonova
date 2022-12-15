@@ -40,21 +40,30 @@ USE WideWorldImporters
 SET STATISTICS TIME  ON
 SET STATISTICS io  ON
  
-SELECT x.[OrderID], p.FullName, x.[InvoiceDate], 
-             (SELECT sum(l.UnitPrice*l.[Quantity])
+;with CTE as
+(
+SELECT DATEFROMPARTS(YEAR(i_1.[InvoiceDate]),MONTH(i_1.[InvoiceDate]),1) AS [DFP] ,sum(l.UnitPrice*l.[Quantity]) as InvoiceSum
              FROM [Sales].[InvoiceLines] as l
-             JOIN [Sales].[Invoices] as y on y.InvoiceID = l.InvoiceID
-             WHERE format(y.[InvoiceDate], 'yyyyMM') <= format(x.[InvoiceDate], 'yyyyMM')
-             and y.[InvoiceDate] >= '20150101'
-             ) as total
-from [Sales].[Invoices] as x
-JOIN [Application].[People] as p on p.[PersonID] = x.[CustomerID]
-WHERE x.[InvoiceDate] >= '20150101'
-order by x.[InvoiceDate]
+             JOIN [Sales].[Invoices] as i_1 on i_1.InvoiceID = l.InvoiceID
+             and i_1.[InvoiceDate] >= '20150101'
+			 GROUP BY DATEFROMPARTS(YEAR(i_1.[InvoiceDate]),MONTH(i_1.[InvoiceDate]),1)
+)
+SELECT
+	inv.InvoiceID, 
+	cust.CustomerName, 
+	inv.InvoiceDate, 
+	line.Quantity * line.UnitPrice as InvoiceSum,
+	(SELECT SUM(InvoiceSum) FROM CTE WHERE [DFP] <= DATEFROMPARTS(YEAR(inv.[InvoiceDate]),MONTH(inv.[InvoiceDate]),1)) as total
+FROM Sales.Invoices as inv
+JOIN Sales.InvoiceLines as line on inv.InvoiceID=line.InvoiceID
+JOIN Sales.Customers as cust ON inv.CustomerID=cust.CustomerID
+WHERE inv.InvoiceDate >= '20150101'
+ORDER BY InvoiceDate
+
 
 SET STATISTICS IO OFF; 
 GO 
-2 минуты 14 сек и 100% cost
+2 минуты 11 сек и 100% cost
 
 /*
 2. Сделайте расчет суммы нарастающим итогом в предыдущем запросе с помощью оконной функции.
@@ -70,7 +79,7 @@ SELECT
 	cust.CustomerName, 
 	inv.InvoiceDate, 
 	line.Quantity * line.UnitPrice as InvoiceSum,
-	SUM(Quantity*UnitPrice) OVER(ORDER BY month(inv.InvoiceDate), year(inv.InvoiceDate))  as RunningTotal
+	SUM(Quantity*UnitPrice) OVER(ORDER BY year(inv.InvoiceDate), month(inv.InvoiceDate)) as RunningTotal
 FROM Sales.Invoices as inv
 JOIN Sales.InvoiceLines as line on inv.InvoiceID=line.InvoiceID
 JOIN Sales.Customers as cust ON inv.CustomerID=cust.CustomerID
